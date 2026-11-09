@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sandbox top-nav repro — top document (Origin A)</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 16px; max-width: 760px; margin-inline: auto;
+  }
+  h1 { font-size: 1.15rem; margin: 0 0 4px; }
+  .sub { opacity: .7; margin: 0 0 16px; font-size: .9rem; }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; }
+  .card { border: 1px solid color-mix(in srgb, currentColor 18%, transparent); border-radius: 10px; padding: 12px 14px; margin: 12px 0; }
+  label { display: block; font-weight: 600; font-size: .82rem; margin: 10px 0 4px; }
+  input[type=url] { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid color-mix(in srgb, currentColor 30%, transparent); background: transparent; color: inherit; font: inherit; }
+  .sandbox { word-break: break-all; background: color-mix(in srgb, currentColor 7%, transparent); padding: 8px 10px; border-radius: 8px; display: block; margin-top: 6px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid color-mix(in srgb, currentColor 30%, transparent); background: color-mix(in srgb, currentColor 6%, transparent); color: inherit; cursor: pointer; }
+  button.primary { background: #2563eb; color: #fff; border-color: #2563eb; }
+  iframe { width: 100%; height: 190px; border: 1px dashed color-mix(in srgb, currentColor 35%, transparent); border-radius: 8px; margin-top: 8px; background: color-mix(in srgb, currentColor 4%, transparent); }
+  #log { font-family: ui-monospace, monospace; font-size: .78rem; white-space: pre-wrap; background: color-mix(in srgb, currentColor 6%, transparent); border-radius: 8px; padding: 10px; min-height: 48px; margin-top: 8px; }
+  .pill { display:inline-block; font-size:.7rem; padding:2px 8px; border-radius:999px; background: color-mix(in srgb, currentColor 12%, transparent); }
+  .note { font-size: .82rem; opacity: .8; }
+</style>
+</head>
+<body>
+  <h1>Cross-origin sandbox top-navigation repro</h1>
+  <p class="sub">Top document — <strong>Origin A</strong>. <span class="pill" id="origin">…</span></p>
+
+  <div class="card">
+    <p class="note">This page embeds a <strong>cross-origin</strong> child (Origin B) inside a sandboxed iframe. The child tries to navigate <em>this</em> top window to another URL <strong>on load, with no user gesture</strong>. The sandbox grants <code>allow-top-navigation-by-user-activation</code> — which per spec should require a user activation — but <strong>not</strong> <code>allow-top-navigation</code>. So a conforming browser must block the gesture-less attempt. The known iOS-Chrome quirk is that it doesn't.</p>
+
+    <label for="frameUrl">Child frame URL (Origin B)</label>
+    <input id="frameUrl" type="url" placeholder="https://origin-b.example.pages.dev/frame/" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <p class="note" style="margin-top:6px">Tip: you can also preset it with <code>?frame=&lt;url&gt;</code> in this page's own URL.</p>
+
+    <label style="margin-top:12px">Sandbox applied to the iframe</label>
+    <code class="sandbox" id="sandboxView"></code>
+
+    <div class="row">
+      <button class="primary" id="load">Load / reload frame</button>
+      <button id="clear">Clear log</button>
+    </div>
+  </div>
+
+  <div id="frameHost"></div>
+
+  <div class="card">
+    <strong style="font-size:.85rem">Top-document log</strong>
+    <div id="log"></div>
+    <p class="note">If the top window gets redirected you'll land on the "redirect succeeded" page instead of seeing this log — that's the positive result. If you stay here and the log shows the frame's blocked attempts, the browser enforced the gesture requirement.</p>
+  </div>
+
+<script>
+// ---- exact sandbox string requested, with the conditional presentation token ----
+// In the real codebase this came from a template literal:
+//   `allow-forms allow-pointer-lock allow-popups allow-popups-to-escape-sandbox
+//    allow-same-origin allow-scripts allow-top-navigation-by-user-activation${session.canAllowPresentation ? ' allow-presentation' : ''}`
+// Toggle canAllowPresentation here to mirror that branch.
+const session = { canAllowPresentation: true };
+const SANDBOX = [
+  'allow-forms',
+  'allow-pointer-lock',
+  'allow-popups',
+  'allow-popups-to-escape-sandbox',
+  'allow-same-origin',
+  'allow-scripts',
+  'allow-top-navigation-by-user-activation'
+].join(' ') + (session.canAllowPresentation ? ' allow-presentation' : '');
+
+const logEl = document.getElementById('log');
+const sandboxView = document.getElementById('sandboxView');
+const frameUrlInput = document.getElementById('frameUrl');
+const frameHost = document.getElementById('frameHost');
+document.getElementById('origin').textContent = location.origin;
+sandboxView.textContent = SANDBOX;
+
+function log(msg){
+  const t = new Date().toISOString().slice(11,23);
+  logEl.textContent += `[${t}] ${msg}\n`;
+}
+
+// preset from ?frame=, falling back to the deployed Origin B (Cloudflare Pages)
+const DEFAULT_FRAME = 'https://x-origin-redirect-demo.pages.dev/frame/';
+const params = new URLSearchParams(location.search);
+frameUrlInput.value = params.get('frame') || DEFAULT_FRAME;
+
+// surface the fact that *something* is navigating the top away
+addEventListener('beforeunload', () => {
+  // best-effort marker; may not always paint before nav
+  log('beforeunload fired on TOP — top-level navigation is happening.');
+});
+
+// child reports what it is about to try, over postMessage
+addEventListener('message', (e) => {
+  // only trust messages that look like ours; content is informational only
+  const d = e.data;
+  if (d && typeof d === 'object' && d.__sandboxRepro) {
+    log(`frame → ${d.phase}: ${d.detail}`);
+  }
+});
+
+function loadFrame(){
+  const url = frameUrlInput.value.trim();
+  if (!url) { log('Set the child frame URL first.'); return; }
+  frameHost.innerHTML = '';
+  const f = document.createElement('iframe');
+  f.setAttribute('sandbox', SANDBOX);
+  f.setAttribute('referrerpolicy', 'no-referrer');
+  f.src = url;
+  frameHost.appendChild(f);
+  log('Loaded sandboxed cross-origin frame → ' + url);
+}
+
+document.getElementById('load').addEventListener('click', loadFrame);
+document.getElementById('clear').addEventListener('click', () => logEl.textContent = '');
+
+// auto-load if preset
+if (frameUrlInput.value) loadFrame();
+</script>
+</body>
+</html>
