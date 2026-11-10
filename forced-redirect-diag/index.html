@@ -1,0 +1,16 @@
+<html>
+<head>
+</head>
+<body>
+</body>
+<script>
+    // Same non-sandboxed top page as /forced-redirect/, pointed at the
+    // instrumented child (/child-diag/) so the result page reveals what
+    // dispatched the triggering postMessage. Diagnostic only.
+    var i = document.createElement('iframe');
+    i.src = "https://x-origin-redirect-demo.pages.dev/child-diag/";
+    i.width = "500px";
+    i.height = "500px";
+    document.body.appendChild(i);
+</script>
+</html>
